@@ -1,0 +1,40 @@
+# Feature engineering using volume
+gilpin_dataframe['lag1'] = gilpin_dataframe['Rainfall (mm)'].shift(1)
+gilpin_dataframe['lag2'] = gilpin_dataframe['Rainfall (mm)'].shift(2)
+gilpin_dataframe['cum3'] = gilpin_dataframe['Rainfall (mm)'].rolling(3).sum()
+gilpin_dataframe['cum7'] = gilpin_dataframe['Rainfall (mm)'].rolling(7).sum()
+gilpin_dataframe['month'] = gilpin_dataframe.index.month
+
+gilpin_dataframe.dropna(inplace=True)
+baseline = gilpin_dataframe['Flow (m3/s)'].min()
+
+# Features and target
+X = gilpin_dataframe[['Rainfall (mm)', 'lag1', 'lag2', 'cum3', 'cum7', 'month']]
+y = gilpin_dataframe['Flow (m3/s)']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+model = keras.Sequential([
+    layers.Dense(64, activation='relu', input_shape=(X_train.shape[1],)),
+    layers.Dense(64, activation='relu'),
+    layers.Dense(1)
+])
+
+model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+# Fit
+history = model.fit(X_train_scaled, y_train, epochs=100, batch_size=16,
+                    validation_split=0.2, verbose=1)
+
+# Evaluate and Predict
+test_loss, test_mae = model.evaluate(X_test_scaled, y_test)
+
+y_pred = model.predict(X_test_scaled).flatten()
+
+model.save("gilpin_raw_discharge_model.keras")
+joblib.dump(scaler, "gilpin_raw_scaler.pkl")
+
