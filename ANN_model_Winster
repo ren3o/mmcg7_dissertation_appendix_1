@@ -40,6 +40,7 @@ gilpin_upstream_area = 15.978193
 winster_upstream_area = 42.023506
 scaling_factor = winster_upstream_area / gilpin_upstream_area
 
+# Scale donor baseflow by catchment area (assumes similar specific discharge) to set a realistic minimum (baseflow) for Winster.
 gilpin_baseline = 0.025
 winster_baseline = gilpin_baseline * (scaling_factor)
 
