@@ -1,6 +1,7 @@
 # Example parameters (Heysham)
+
 year = 2024
-dt = 300  # resample to 5-minute interval
+dt = 300 
 Zo = 5.6
 amplitude = [3.18, 1.03, 0.12, 0.11]
 phase = [325, 8, 193, 40]
@@ -11,12 +12,14 @@ CD = -4.90  # chart datum
 h_mOD = h + CD
 
 # --- Enforce a minimum baseline level ---
-flat_baseline = 1.5  # minimum allowed tide level in meters
+flat_baseline = 1.5  # minimum allowed tide level in meters OD
 h_truncated = np.maximum(h_mOD, flat_baseline)
 
 t = np.arange(0, len(h)*dt, dt)  # seconds
 days = t / (24*3600)
 
+
+# model function
 
 def simple_tide2(Zo, amplitude, phase, year, dt=None):
     """
