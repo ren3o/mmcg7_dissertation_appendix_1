@@ -1,0 +1,100 @@
+# Example parameters (Heysham)
+year = 2024
+dt = 300  # resample to 5-minute interval
+Zo = 5.6
+amplitude = [3.18, 1.03, 0.12, 0.11]
+phase = [325, 8, 193, 40]
+
+h = simple_tide2(Zo, amplitude, phase, year, dt=dt)
+
+CD = -4.90  # chart datum
+h_mOD = h + CD
+
+# --- Enforce a minimum baseline level ---
+flat_baseline = 1.5  # minimum allowed tide level in meters
+h_truncated = np.maximum(h_mOD, flat_baseline)
+
+t = np.arange(0, len(h)*dt, dt)  # seconds
+days = t / (24*3600)
+
+
+def simple_tide2(Zo, amplitude, phase, year, dt=None):
+    """
+    Generate predicted tide series for given year using M2, S2, K1, O1 constituents.
+
+    Parameters
+    ----------
+    Zo : float
+        Mean water level (datum offset).
+    amplitude : array-like, shape (4,)
+        Amplitudes of M2, S2, K1, O1 in meters.
+    phase : array-like, shape (4,)
+        Phases of M2, S2, K1, O1 in degrees.
+    year : int
+        Year to simulate.
+    dt : int, optional
+        Resampling interval in seconds (default: None, returns hourly).
+    """
+    # Leap year check
+    leap = 366 if (np.datetime64(f'{year}-12-31').astype('datetime64[D]').astype(int) -
+                  np.datetime64(f'{year}-01-01').astype('datetime64[D]').astype(int) + 1) == 366 else 365
+    days = leap
+
+    D = np.arange(1, days+1)  # day vector
+
+    # Convert supplied phases and speeds to radians
+    rad = np.pi/180
+    angular_speed = np.array([28.9841, 30.0, 15.0411, 13.9430]) * (np.pi/180)  # rad/hr
+    phase = np.array(phase) * (np.pi/180)  # degrees -> radians
+
+    # Compute T
+    T = (365 * (year - 1900) + D + np.floor((year-1901)/4)) / 36525
+    T2 = T**2
+    s = 277.02 + 481267.89 * T + 0.0011 * T2
+    h = 280.19 + 36000.77 * T + 0.0003 * T2
+    p = 334.39 + 4069.04 * T + 0.0103 * T2
+    N = 259.16 - 1934.14 * T + 0.0021 * T2
+    p_prime = 281.22 + 1.72 * T + 0.0005 * T2
+
+    # Prepare vectors
+    hours = np.arange(1, days*24 + 1)
+    M2 = np.zeros_like(hours, dtype=float)
+    S2 = np.zeros_like(hours, dtype=float)
+    K1 = np.zeros_like(hours, dtype=float)
+    O1 = np.zeros_like(hours, dtype=float)
+
+    # Constituent calculations
+    V_M2 = np.mod(-2*np.deg2rad(s) + 2*np.deg2rad(h), 2*np.pi)
+    f_M2 = 1.000 - 0.037 * np.cos(np.deg2rad(N))
+    u_M2 = (-2.1 * np.sin(np.deg2rad(N))) * rad
+
+    V_S2 = np.mod(-2*np.deg2rad(s) + 2*np.deg2rad(h), 2*np.pi)
+
+    V_K1 = np.mod(2*np.deg2rad(h), 2*np.pi)
+    f_K1 = 1.006 + 0.115 * np.cos(np.deg2rad(N))
+    u_K1 = (-8.9 * np.sin(np.deg2rad(N))) * rad
+
+    V_O1 = np.mod(-2*np.deg2rad(s) + 2*np.deg2rad(h), 2*np.pi)
+    f_O1 = 1.009 + 0.187 * np.cos(np.deg2rad(N))
+    u_O1 = (10.8 * np.sin(np.deg2rad(N))) * rad
+
+    # Generate hourly tides
+    for i in range(len(hours)):
+        t = (i % 24)  # hour of the day
+        d = i // 24  # day index
+
+        M2[i] = amplitude[0] * f_M2[d] * np.cos(angular_speed[0] * t - phase[0] + (V_M2[d] + u_M2[d]))
+        S2[i] = amplitude[1] * np.cos(angular_speed[1] * t - phase[1])
+        K1[i] = amplitude[2] * f_K1[d] * np.cos(angular_speed[2] * t - phase[2] + (V_K1[d] + u_K1[d]))
+        O1[i] = amplitude[3] * f_O1[d] * np.cos(angular_speed[3] * t - phase[3] + (V_O1[d] + u_O1[d]))
+
+    h_out = Zo + M2 + S2 + K1 + O1
+
+    if dt is not None:
+        # Interpolate to finer timestep in seconds
+        x = np.arange(0, len(h_out)*3600, 3600)
+        xi = np.arange(0, (len(h_out)-1)*3600 + dt, dt)
+        interp_func = interp1d(x, h_out, kind='cubic')
+        h_out = interp_func(xi)
+
+    return h_out
