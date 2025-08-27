@@ -1,0 +1,49 @@
+# --- Load model and scaler ---
+model = load_model("gilpin_raw_discharge_model.keras")
+scaler = load("gilpin_raw_scaler.pkl")
+
+# --- Load rainfall data ---
+winster_rain = pd.read_csv("High-Newton-rainfall-daily full record.csv", dayfirst=True, parse_dates=['date'])
+
+# --- Filter out 'Suspect' quality ---
+winster_rain_clean = winster_rain[winster_rain['quality'] != 'Suspect'].copy()
+
+# --- Prepare rainfall dataframe ---
+rain_clean = winster_rain_clean[['date', 'value']].copy()
+rain_clean.rename(columns={'value': 'Rainfall (mm)'}, inplace=True)
+rain_clean['date'] = pd.to_datetime(rain_clean['date'])
+rain_clean.set_index('date', inplace=True)
+
+# --- Feature engineering ---
+rain_clean['month'] = rain_clean.index.month
+rain_clean['rain_lag1'] = rain_clean['Rainfall (mm)'].shift(1)
+rain_clean['rain_lag2'] = rain_clean['Rainfall (mm)'].shift(2)
+rain_clean['rain_3d_cum'] = rain_clean['Rainfall (mm)'].rolling(3).sum()
+rain_clean['rain_7d_cum'] = rain_clean['Rainfall (mm)'].rolling(7).sum()
+
+# --- Drop NaNs from lags/rolling ---
+rain_clean.dropna(inplace=True)
+
+X_new = rain_clean[['Rainfall (mm)', 'rain_lag1', 'rain_lag2', 'rain_3d_cum', 'rain_7d_cum', 'month']].copy()
+
+# Match feature names to training set
+X_new.columns = ['Rainfall (mm)', 'lag1', 'lag2', 'cum3', 'cum7', 'month']
+
+# Now transform safely
+X_new_scaled = scaler.transform(X_new)
+
+# --- Predict with trained model ---
+y_pred_scaled = model.predict(X_new_scaled)
+
+# Scale predicted Gilpin flow to Winster catchment
+gilpin_upstream_area = 15.978193
+winster_upstream_area = 42.023506
+scaling_factor = winster_upstream_area / gilpin_upstream_area
+
+gilpin_baseline = 0.025
+winster_baseline = gilpin_baseline * (scaling_factor)
+
+results = pd.DataFrame({
+    'Predicted Flow (m3/s)': y_pred_scaled.flatten() * scaling_factor
+}, index=rain_clean.index)
+results['Predicted Flow (m3/s)'] = results['Predicted Flow (m3/s)'].clip(lower=winster_baseline)
